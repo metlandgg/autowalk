@@ -1,0 +1,842 @@
+repeat task.wait() until game:IsLoaded()
+task.wait(1)
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+-- Player
+local plr = Players.LocalPlayer
+local char = plr.Character or plr.CharacterAdded:Wait()
+local hum = char:WaitForChild("Humanoid")
+local root = char:WaitForChild("HumanoidRootPart")
+
+-- Variables
+local recording = {}
+local isRecording = false
+local isPlaying = false
+local loopPlayback = false
+local recordConnection = nil
+local checkpointDelay = 0.3
+local magnetEnabled = false
+local magnetConnection = nil
+local magnetParts = {}
+local flingTarget = nil
+local flyEnabled = false
+local flySpeed = 100
+local flyConnection = nil
+local espEnabled = false
+local espConnections = {}
+local espFolder = nil
+
+-- Load saved routes (from external file)
+local savedRoutes = {}
+pcall(function()
+    savedRoutes = loadstring(game:HttpGet("YOUR_ROUTES_URL_HERE"))()
+end)
+
+-- Load Modern UI
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "💀 METLANDGG",
+   LoadingTitle = "METLANDGG",
+   LoadingSubtitle = "by METLANDGG",
+   ConfigurationSaving = {
+      Enabled = false,
+   },
+   Discord = {
+      Enabled = false,
+   },
+   KeySystem = false,
+})
+
+-- Get current stage
+local function getCurrentStage()
+    local leaderstats = plr:FindFirstChild("leaderstats")
+    if leaderstats then
+        local stage = leaderstats:FindFirstChild("Stage") or 
+                     leaderstats:FindFirstChild("stage") or
+                     leaderstats:FindFirstChild("Checkpoint") or
+                     leaderstats:FindFirstChild("CP")
+        if stage then
+            return tonumber(stage.Value) or 0
+        end
+    end
+    return 0
+end
+
+-- Notify
+local function notify(msg)
+    Rayfield:Notify({
+       Title = "💀 METLANDGG",
+       Content = msg,
+       Duration = 3,
+       Image = 4483362458,
+    })
+end
+
+-- Find all checkpoints
+local function findCheckpoints()
+    local checkpoints = {}
+    
+    for _, obj in pairs(workspace:GetDescendants()) do
+        local isCheckpoint = false
+        local cpNumber = nil
+        
+        if obj:IsA("SpawnLocation") then
+            isCheckpoint = true
+            local num = obj.Name:match("%d+")
+            if num then cpNumber = tonumber(num) end
+        end
+        
+        local name = obj.Name:lower()
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            if name:match("checkpoint") or name:match("^cp") or 
+               name:match("stage") or name:match("spawn") then
+                isCheckpoint = true
+                local num = name:match("%d+")
+                if num then cpNumber = tonumber(num) end
+            end
+        end
+        
+        if isCheckpoint then
+            local pos, size, cf
+            
+            if obj:IsA("Model") then
+                local primaryPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                if primaryPart then
+                    pos = primaryPart.Position
+                    size = primaryPart.Size
+                    cf = primaryPart.CFrame
+                end
+            elseif obj:IsA("BasePart") then
+                pos = obj.Position
+                size = obj.Size
+                cf = obj.CFrame
+            end
+            
+            if pos then
+                table.insert(checkpoints, {
+                    Name = obj.Name,
+                    Position = pos,
+                    CFrame = cf,
+                    Size = size or Vector3.new(10, 1, 10),
+                    Number = cpNumber or 0,
+                    Object = obj
+                })
+            end
+        end
+    end
+    
+    table.sort(checkpoints, function(a, b)
+        if a.Number ~= 0 and b.Number ~= 0 then
+            return a.Number < b.Number
+        else
+            return a.Position.Y < b.Position.Y
+        end
+    end)
+    
+    return checkpoints
+end
+
+-- Replay recorded movements
+local function replayMovement()
+    if #recording == 0 then
+        notify("No recording found!")
+        return
+    end
+    
+    isPlaying = true
+    notify("Replaying movements...")
+    
+    repeat
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+        
+        for i = 1, #recording do
+            if not isPlaying or not root then break end
+            
+            local frame = recording[i]
+            root.CFrame = frame.cf
+            root.Velocity = frame.vel or Vector3.new(0, 0, 0)
+            
+            if frame.jumping then
+                hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+            
+            task.wait()
+        end
+        
+        if not loopPlayback then break end
+        
+    until not isPlaying
+    
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            part.CanCollide = true
+        end
+    end
+    
+    isPlaying = false
+    notify("Replay finished!")
+end
+
+-- Touch checkpoint
+local function touchCheckpoint(cp)
+    if not cp or not cp.Object then return end
+    
+    task.wait(0.1)
+    
+    pcall(function()
+        for _, part in pairs(char:GetChildren()) do
+            if part:IsA("BasePart") then
+                if cp.Object:IsA("BasePart") then
+                    firetouchinterest(part, cp.Object, 0)
+                    task.wait(0.05)
+                    firetouchinterest(part, cp.Object, 1)
+                elseif cp.Object:IsA("Model") then
+                    for _, modelPart in pairs(cp.Object:GetDescendants()) do
+                        if modelPart:IsA("BasePart") then
+                            firetouchinterest(part, modelPart, 0)
+                            task.wait(0.05)
+                            firetouchinterest(part, modelPart, 1)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    task.wait(0.1)
+end
+
+-- Anti-detect Fly
+local function startFly()
+    if flyConnection then flyConnection:Disconnect() end
+    
+    local bodyVel = Instance.new("BodyVelocity")
+    bodyVel.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bodyVel.Velocity = Vector3.new(0, 0, 0)
+    bodyVel.Parent = root
+    
+    local bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    bodyGyro.P = 9000
+    bodyGyro.CFrame = root.CFrame
+    bodyGyro.Parent = root
+    
+    flyConnection = RunService.Heartbeat:Connect(function()
+        if not flyEnabled or not root then 
+            if bodyVel then bodyVel:Destroy() end
+            if bodyGyro then bodyGyro:Destroy() end
+            return 
+        end
+        
+        local cam = workspace.CurrentCamera
+        local move = Vector3.new()
+        
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
+        
+        bodyVel.Velocity = move.Magnitude > 0 and move.Unit * flySpeed or Vector3.new(0, 0, 0)
+        bodyGyro.CFrame = cam.CFrame
+        hum.PlatformStand = true
+    end)
+end
+
+-- ESP System
+local function createESP(player)
+    if player == plr then return end
+    
+    local function addESP(char)
+        if not char then return end
+        
+        local hrp = char:WaitForChild("HumanoidRootPart", 5)
+        if not hrp then return end
+        
+        -- Box ESP
+        local box = Instance.new("BoxHandleAdornment")
+        box.Name = "ESP_Box"
+        box.Size = Vector3.new(4, 6, 4)
+        box.Color3 = Color3.fromRGB(255, 0, 0)
+        box.Transparency = 0.7
+        box.AlwaysOnTop = true
+        box.ZIndex = 5
+        box.Adornee = hrp
+        box.Parent = hrp
+        
+        -- Name ESP
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESP_Name"
+        billboard.Size = UDim2.new(0, 100, 0, 40)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Adornee = hrp
+        billboard.Parent = hrp
+        
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Size = UDim2.new(1, 0, 1, 0)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = player.Name
+        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        nameLabel.TextStrokeTransparency = 0
+        nameLabel.TextScaled = true
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.Parent = billboard
+        
+        -- Distance ESP
+        local distLabel = Instance.new("TextLabel")
+        distLabel.Size = UDim2.new(1, 0, 0.5, 0)
+        distLabel.Position = UDim2.new(0, 0, 0.5, 0)
+        distLabel.BackgroundTransparency = 1
+        distLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+        distLabel.TextStrokeTransparency = 0
+        distLabel.TextScaled = true
+        distLabel.Font = Enum.Font.Gotham
+        distLabel.Parent = billboard
+        
+        -- Update distance
+        local connection = RunService.Heartbeat:Connect(function()
+            if not espEnabled or not hrp or not root then
+                connection:Disconnect()
+                return
+            end
+            
+            local dist = math.floor((root.Position - hrp.Position).Magnitude)
+            distLabel.Text = dist .. " studs"
+        end)
+        
+        table.insert(espConnections, connection)
+    end
+    
+    if player.Character then
+        addESP(player.Character)
+    end
+    
+    player.CharacterAdded:Connect(function(char)
+        if espEnabled then
+            addESP(char)
+        end
+    end)
+end
+
+local function clearESP()
+    for _, conn in pairs(espConnections) do
+        conn:Disconnect()
+    end
+    espConnections = {}
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Character then
+            for _, obj in pairs(player.Character:GetDescendants()) do
+                if obj.Name:match("ESP_") then
+                    obj:Destroy()
+                end
+            end
+        end
+    end
+end
+
+-- Magnet unanchored parts (invisible)
+local function startMagnet()
+    if magnetConnection then magnetConnection:Disconnect() end
+    
+    magnetParts = {}
+    
+    for _, part in pairs(workspace:GetDescendants()) do
+        if part:IsA("BasePart") and not part.Anchored and 
+           part.Parent ~= char and part.Name ~= "Baseplate" then
+            table.insert(magnetParts, part)
+        end
+    end
+    
+    notify("Magnet: " .. #magnetParts .. " parts")
+    
+    magnetConnection = RunService.Heartbeat:Connect(function()
+        if not magnetEnabled or not root then return end
+        
+        for _, part in pairs(magnetParts) do
+            if part and part.Parent and not part.Anchored then
+                -- Magnet parts around player (invisible orbit)
+                local angle = tick() * 2 + _ * (360 / #magnetParts)
+                local radius = 8
+                local offset = CFrame.new(
+                    math.cos(math.rad(angle)) * radius,
+                    math.sin(tick() * 3) * 2,
+                    math.sin(math.rad(angle)) * radius
+                )
+                
+                part.CFrame = root.CFrame * offset
+                part.Velocity = Vector3.new(0, 0, 0)
+                part.RotVelocity = Vector3.new(0, 0, 0)
+                part.CanCollide = true -- Enable collision for fling
+            end
+        end
+    end)
+end
+
+-- Fling with magneted parts
+local function flingPlayer(targetPlayer)
+    if not magnetEnabled or #magnetParts == 0 then
+        notify("Enable magnet first!")
+        return
+    end
+    
+    local targetChar = targetPlayer.Character
+    if not targetChar then return end
+    
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return end
+    
+    notify("Flinging " .. targetPlayer.Name)
+    
+    -- Launch magneted parts at target
+    for i, part in pairs(magnetParts) do
+        if part and part.Parent then
+            task.spawn(function()
+                for count = 1, 5 do
+                    part.CFrame = targetRoot.CFrame
+                    part.Velocity = (targetRoot.Position - root.Position).Unit * 500
+                    part.RotVelocity = Vector3.new(
+                        math.random(-100, 100),
+                        math.random(-100, 100),
+                        math.random(-100, 100)
+                    )
+                    task.wait(0.1)
+                end
+            end)
+        end
+    end
+end
+
+-- Export recording to code
+local function exportRecording()
+    if #recording == 0 then
+        notify("No recording to export!")
+        return
+    end
+    
+    local code = '["New Route"] = {\n'
+    for i, frame in ipairs(recording) do
+        local cf = frame.cf
+        code = code .. string.format(
+            '    {cf = CFrame.new(%.1f, %.1f, %.1f)},\n',
+            cf.Position.X, cf.Position.Y, cf.Position.Z
+        )
+    end
+    code = code .. '},'
+    
+    -- Copy to clipboard (if supported)
+    setclipboard(code)
+    notify("Code copied to clipboard!")
+    
+    return code
+end
+
+-- TABS
+local MainTab = Window:CreateTab("💀 Main", 4483362458)
+local RecordTab = Window:CreateTab("💀 Recording", 4483362458)
+local MagnetTab = Window:CreateTab("💀 Magnet", 4483362458)
+local MovementTab = Window:CreateTab("💀 Movement", 4483362458)
+local VisualsTab = Window:CreateTab("💀 Visuals", 4483362458)
+local SettingsTab = Window:CreateTab("💀 Settings", 4483362458)
+
+-- MAIN TAB
+local StageLabel = MainTab:CreateLabel("Stage: " .. getCurrentStage())
+
+MainTab:CreateButton({
+   Name = "Scan Checkpoints",
+   Callback = function()
+      local cps = findCheckpoints()
+      notify("Found " .. #cps .. " checkpoints")
+   end,
+})
+
+local autoWalkToggle = MainTab:CreateToggle({
+   Name = "Auto Walk Checkpoints",
+   CurrentValue = false,
+   Flag = "AutoWalk",
+   Callback = function(Value)
+      if Value then
+         notify("Starting auto walk...")
+         
+         task.spawn(function()
+            local cps = findCheckpoints()
+            
+            if #cps == 0 then
+               notify("No checkpoints found!")
+               autoWalkToggle:Set(false)
+               return
+            end
+            
+            local currentStage = getCurrentStage()
+            
+            for i, cp in ipairs(cps) do
+               if not Rayfield.Flags.AutoWalk.CurrentValue or not root then break end
+               
+               -- Only do checkpoints ahead of current stage
+               if cp.Number > 0 and cp.Number <= currentStage then
+                  continue
+               end
+               
+               notify("Teleporting to CP " .. (cp.Number or i))
+               
+               -- Direct teleport to avoid clipping
+               local targetCF = cp.CFrame * CFrame.new(0, cp.Size.Y / 2 + 5, 0)
+               root.CFrame = targetCF
+               
+               task.wait(0.2)
+               touchCheckpoint(cp)
+               
+               -- Wait until stage updates
+               local waited = 0
+               repeat
+                  task.wait(0.1)
+                  waited = waited + 0.1
+                  currentStage = getCurrentStage()
+               until currentStage >= (cp.Number or i) or waited >= 2
+               
+               task.wait(checkpointDelay)
+            end
+            
+            notify("Finished!")
+            autoWalkToggle:Set(false)
+         end)
+      end
+   end,
+})
+
+MainTab:CreateButton({
+   Name = "Next Checkpoint",
+   Callback = function()
+      local cps = findCheckpoints()
+      local currentStage = getCurrentStage()
+      
+      for _, cp in ipairs(cps) do
+         if cp.Number > currentStage or (cp.Number == 0 and cp.Position.Y > root.Position.Y) then
+            local targetCF = cp.CFrame * CFrame.new(0, cp.Size.Y / 2 + 5, 0)
+            root.CFrame = targetCF
+            touchCheckpoint(cp)
+            break
+         end
+      end
+   end,
+})
+
+-- RECORDING TAB
+RecordTab:CreateButton({
+   Name = "Start Recording",
+   Callback = function()
+      if recordConnection then recordConnection:Disconnect() end
+      
+      isRecording = true
+      recording = {}
+      notify("Recording started!")
+      
+      recordConnection = RunService.Heartbeat:Connect(function()
+         if not isRecording or not root then return end
+         
+         table.insert(recording, {
+            cf = root.CFrame,
+            vel = root.Velocity,
+            jumping = hum:GetState() == Enum.HumanoidStateType.Jumping,
+         })
+      end)
+   end,
+})
+
+RecordTab:CreateButton({
+   Name = "Stop Recording",
+   Callback = function()
+      isRecording = false
+      
+      if recordConnection then
+         recordConnection:Disconnect()
+         recordConnection = nil
+      end
+      
+      notify("Recorded " .. #recording .. " frames")
+   end,
+})
+
+RecordTab:CreateToggle({
+   Name = "Loop Playback",
+   CurrentValue = false,
+   Flag = "LoopPlay",
+   Callback = function(Value)
+      loopPlayback = Value
+   end,
+})
+
+RecordTab:CreateButton({
+   Name = "Play Recording",
+   Callback = function()
+      replayMovement()
+   end,
+})
+
+RecordTab:CreateButton({
+   Name = "Stop Playback",
+   Callback = function()
+      isPlaying = false
+   end,
+})
+
+RecordTab:CreateButton({
+   Name = "Copy Recording Code",
+   Callback = function()
+      exportRecording()
+   end,
+})
+
+RecordTab:CreateButton({
+   Name = "Clear Recording",
+   Callback = function()
+      recording = {}
+      notify("Recording cleared!")
+   end,
+})
+
+RecordTab:CreateLabel("Frames: 0")
+
+-- MAGNET TAB
+MagnetTab:CreateToggle({
+   Name = "Enable Magnet",
+   CurrentValue = false,
+   Flag = "Magnet",
+   Callback = function(Value)
+      magnetEnabled = Value
+      
+      if Value then
+         startMagnet()
+      else
+         if magnetConnection then
+            magnetConnection:Disconnect()
+            magnetConnection = nil
+         end
+         magnetParts = {}
+      end
+   end,
+})
+
+MagnetTab:CreateButton({
+   Name = "Refresh Parts",
+   Callback = function()
+      if magnetEnabled then
+         startMagnet()
+      end
+   end,
+})
+
+local targetDropdown = MagnetTab:CreateDropdown({
+   Name = "Select Target",
+   Options = {},
+   CurrentOption = {"None"},
+   MultipleOptions = false,
+   Flag = "TargetPlayer",
+   Callback = function(Option)
+      for _, p in pairs(Players:GetPlayers()) do
+         if p.Name == Option[1] then
+            flingTarget = p
+            break
+         end
+      end
+   end,
+})
+
+MagnetTab:CreateButton({
+   Name = "Refresh Players",
+   Callback = function()
+      local playerNames = {}
+      for _, p in pairs(Players:GetPlayers()) do
+         if p ~= plr then
+            table.insert(playerNames, p.Name)
+         end
+      end
+      targetDropdown:Refresh(playerNames, true)
+   end,
+})
+
+MagnetTab:CreateButton({
+   Name = "Fling Target",
+   Callback = function()
+      if flingTarget then
+         flingPlayer(flingTarget)
+      else
+         notify("Select a target first!")
+      end
+   end,
+})
+
+-- MOVEMENT TAB
+MovementTab:CreateToggle({
+   Name = "Fly",
+   CurrentValue = false,
+   Flag = "Fly",
+   Callback = function(Value)
+      flyEnabled = Value
+      
+      if Value then
+         startFly()
+      else
+         if flyConnection then
+            flyConnection:Disconnect()
+            flyConnection = nil
+         end
+         hum.PlatformStand = false
+         
+         -- Remove body movers
+         for _, obj in pairs(root:GetChildren()) do
+            if obj:IsA("BodyVelocity") or obj:IsA("BodyGyro") then
+               obj:Destroy()
+            end
+         end
+      end
+   end,
+})
+
+MovementTab:CreateSlider({
+   Name = "Fly Speed",
+   Range = {50, 300},
+   Increment = 10,
+   CurrentValue = 100,
+   Flag = "FlySpeed",
+   Callback = function(Value)
+      flySpeed = Value
+   end,
+})
+
+-- VISUALS TAB
+VisualsTab:CreateToggle({
+   Name = "ESP Players",
+   CurrentValue = false,
+   Flag = "ESP",
+   Callback = function(Value)
+      espEnabled = Value
+      
+      if Value then
+         for _, player in pairs(Players:GetPlayers()) do
+            createESP(player)
+         end
+         
+         Players.PlayerAdded:Connect(function(player)
+            if espEnabled then
+               createESP(player)
+            end
+         end)
+      else
+         clearESP()
+      end
+   end,
+})
+
+VisualsTab:CreateToggle({
+   Name = "Fullbright",
+   CurrentValue = false,
+   Flag = "Fullbright",
+   Callback = function(Value)
+      local Lighting = game:GetService("Lighting")
+      
+      if Value then
+         Lighting.Brightness = 3
+         Lighting.FogEnd = 100000
+         Lighting.GlobalShadows = false
+         Lighting.Ambient = Color3.new(1, 1, 1)
+      else
+         Lighting.Brightness = 1
+         Lighting.FogEnd = 10000
+         Lighting.GlobalShadows = true
+         Lighting.Ambient = Color3.new(0.5, 0.5, 0.5)
+      end
+   end,
+})
+
+-- SETTINGS TAB
+SettingsTab:CreateSlider({
+   Name = "Checkpoint Delay",
+   Range = {0, 2},
+   Increment = 0.1,
+   CurrentValue = 0.3,
+   Flag = "CPDelay",
+   Callback = function(Value)
+      checkpointDelay = Value
+   end,
+})
+
+SettingsTab:CreateToggle({
+   Name = "Anti-AFK",
+   CurrentValue = false,
+   Flag = "AntiAFK",
+   Callback = function(Value)
+      if Value then
+         local VirtualUser = game:GetService("VirtualUser")
+         plr.Idled:Connect(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+         end)
+         notify("Anti-AFK enabled!")
+      end
+   end,
+})
+
+SettingsTab:CreateButton({
+   Name = "Respawn",
+   Callback = function()
+      if hum then hum.Health = 0 end
+   end,
+})
+
+SettingsTab:CreateButton({
+   Name = "Destroy UI",
+   Callback = function()
+      isRecording = false
+      isPlaying = false
+      magnetEnabled = false
+      flyEnabled = false
+      espEnabled = false
+      
+      if recordConnection then recordConnection:Disconnect() end
+      if magnetConnection then magnetConnection:Disconnect() end
+      if flyConnection then flyConnection:Disconnect() end
+      clearESP()
+      
+      Rayfield:Destroy()
+   end,
+})
+
+-- Auto update stage
+task.spawn(function()
+    while task.wait(1) do
+        pcall(function()
+            StageLabel:Set("Stage: " .. getCurrentStage())
+        end)
+    end
+end)
+
+-- Character respawn handler
+plr.CharacterAdded:Connect(function(newChar)
+    task.wait(1)
+    char = newChar
+    hum = char:WaitForChild("Humanoid")
+    root = char:WaitForChild("HumanoidRootPart")
+    
+    isRecording = false
+    isPlaying = false
+    flyEnabled = false
+    
+    if recordConnection then recordConnection:Disconnect() end
+    if flyConnection then flyConnection:Disconnect() end
+end)
+
+notify("💀 METLANDGG loaded!")
+notify("Stage: " .. getCurrentStage())
