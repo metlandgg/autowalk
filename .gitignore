@@ -1,14 +1,86 @@
-# A fast, small, safe, gradually typed embeddable scripting language derived from Lua
-#
-# https://github.com/luau-lang/luau
-# https://luau.org/
+-- ROUTES DATA FOR METLANDGG
+-- Save this separately and load into main script
 
-# Code coverage
-coverage.out
+local savedRoutes = {
+    ["MOUNT YETI"] = {
+        {cf = CFrame.new(-394.8, 49.2, 101.9)},
+        {cf = CFrame.new(-394.9, 49.2, 101.9)},
+        {cf = CFrame.new(-395.0, 49.2, 101.9)},
+        {cf = CFrame.new(-395.1, 49.2, 101.9)},
+        {cf = CFrame.new(-395.2, 49.2, 101.9)},
+        {cf = CFrame.new(-395.3, 49.2, 101.9)},
+        {cf = CFrame.new(-395.4, 49.2, 101.9)},
+        {cf = CFrame.new(-395.6, 49.2, 101.9)},
+        {cf = CFrame.new(-395.7, 49.2, 102.0)},
+        {cf = CFrame.new(-395.8, 49.2, 102.0)},
+        {cf = CFrame.new(-396.0, 49.2, 102.0)},
+        -- ... (add more points as needed)
+    },
+    
+    ["VALLEY PATH"] = {
+        {cf = CFrame.new(-450.1, 49.2, 106.4)},
+        {cf = CFrame.new(-450.3, 49.2, 106.4)},
+        {cf = CFrame.new(-450.4, 49.2, 106.4)},
+        {cf = CFrame.new(-450.6, 49.2, 106.4)},
+        {cf = CFrame.new(-450.7, 49.2, 106.5)},
+        {cf = CFrame.new(-450.8, 49.2, 106.5)},
+        {cf = CFrame.new(-451.0, 49.2, 106.5)},
+        {cf = CFrame.new(-451.1, 49.2, 106.5)},
+        {cf = CFrame.new(-451.2, 49.2, 106.5)},
+        {cf = CFrame.new(-451.4, 49.2, 106.5)},
+        {cf = CFrame.new(-451.5, 49.2, 106.5)},
+        {cf = CFrame.new(-451.6, 49.2, 106.5)},
+        -- ... (add more points as needed)
+    },
+    
+    ["DESERT TRAIL"] = {
+        {cf = CFrame.new(-477.9, 49.2, 108.0)},
+        {cf = CFrame.new(-478.1, 49.2, 108.0)},
+        {cf = CFrame.new(-478.3, 49.2, 108.0)},
+        {cf = CFrame.new(-478.4, 49.2, 108.0)},
+        {cf = CFrame.new(-478.5, 49.2, 108.0)},
+        {cf = CFrame.new(-478.7, 49.2, 108.0)},
+        {cf = CFrame.new(-478.8, 49.2, 108.0)},
+        {cf = CFrame.new(-478.9, 49.2, 108.0)},
+        {cf = CFrame.new(-479.2, 49.2, 108.0)},
+        {cf = CFrame.new(-479.3, 49.2, 108.0)},
+        {cf = CFrame.new(-479.5, 49.2, 108.0)},
+        {cf = CFrame.new(-479.6, 49.2, 108.0)},
+        -- ... (add more points as needed)
+    },
+    
+    ["FOREST RUN"] = {
+        {cf = CFrame.new(-500.0, 49.2, 108.0)},
+        {cf = CFrame.new(-500.1, 49.2, 108.0)},
+        {cf = CFrame.new(-500.3, 49.2, 108.0)},
+        {cf = CFrame.new(-500.4, 49.2, 108.0)},
+        {cf = CFrame.new(-500.7, 49.2, 108.0)},
+        {cf = CFrame.new(-500.8, 49.2, 108.0)},
+        {cf = CFrame.new(-500.9, 49.2, 108.0)},
+        {cf = CFrame.new(-501.1, 49.2, 108.0)},
+        {cf = CFrame.new(-501.3, 49.2, 108.0)},
+        {cf = CFrame.new(-501.5, 49.2, 108.0)},
+        {cf = CFrame.new(-501.6, 49.2, 108.0)},
+        {cf = CFrame.new(-501.7, 49.2, 108.0)},
+        -- ... (add more points as needed)
+    },
+    
+    ["MOUNTAIN CLIMB"] = {
+        {cf = CFrame.new(-533.4, 51.0, 107.5)},
+        {cf = CFrame.new(-533.6, 51.2, 107.5)},
+        {cf = CFrame.new(-533.7, 51.4, 107.5)},
+        {cf = CFrame.new(-534.0, 51.8, 107.5)},
+        {cf = CFrame.new(-534.1, 51.9, 107.5)},
+        {cf = CFrame.new(-534.2, 52.1, 107.5)},
+        {cf = CFrame.new(-534.4, 52.3, 107.5)},
+        {cf = CFrame.new(-534.5, 52.4, 107.5)},
+        {cf = CFrame.new(-534.6, 52.6, 107.5)},
+        {cf = CFrame.new(-534.9, 52.9, 107.5)},
+        {cf = CFrame.new(-535.0, 53.0, 107.5)},
+        {cf = CFrame.new(-535.2, 53.2, 107.5)},
+        -- ... (add more points as needed)
+    }
+}
 
-# Profiling
-profile.out
-profile.svg
-
-# Time trace
-trace.json
+-- Function to load routes into main script
+return savedRoutes
